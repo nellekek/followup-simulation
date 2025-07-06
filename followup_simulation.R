@@ -7,7 +7,7 @@ library(boot)
 
 set.seed(123)
 
-start_time <- Sys.time()
+start_time <- Sys.time()    # To track elapsed time 
 
 N <- 100      # Individuals per trial
 K <- 1000     # Number of simulations per parameter combination
@@ -24,7 +24,7 @@ results_list <- list()
 # Simulation loop
 parameter_combo_index <- 1 
 
-## Loop over parameter combinations 
+# Loop over parameter combinations 
 for (i in 1:5) { 
   message(paste("Parameter combo:", i))
   
@@ -35,7 +35,7 @@ for (i in 1:5) {
       a <- ab[1]
       b <- ab[2]
       
-      ### Calculate true follow-up time for this (a,b,lambda_c2)
+      # Calculate true follow-up time for this (a,b,lambda_c2)
       
       # ### True fup: median of C_obs (uncomment to use this method) ###
       # theta_exp <- log(2) / (lambda_c2)                              #
@@ -67,13 +67,13 @@ for (i in 1:5) {
       # }                                                                        #
       # ##########################################################################
 
-      ### Store MSE, bias, coverage for each method
+      # Store MSE, bias, coverage for each method
       method_mse <- c()
       method_bias <- c()
       method_coverage <- c()
       method_names <- c()
       
-      ### Storage for each simulation run
+      # Storage for each simulation run
       method_estimates <- list(obs_time = c(),
                                cens_time = c(),
                                end_of_study = c(),
@@ -88,13 +88,13 @@ for (i in 1:5) {
                           known_func = c(),
                           reverse_km = c())
       
-      ### Generate K datasets 
+      # Generate K datasets 
       for (k in 1:K) {
         message(paste("Dataset:", k))
         
         delta <- time <- X <- C1 <- C2 <- numeric(N)
         
-        #### Generate data for N individuals 
+        # Generate data for N individuals 
         for (n in 1:N) {
           X[n] <- rexp(1, lambda_x)
           C1[n] <- runif(1, a, b)
@@ -113,28 +113,28 @@ for (i in 1:5) {
         
         df <- data.frame(ID = 1:N, time, delta, X, C1, C2)
         
-        #### Method 1: Observation time
+        # Method 1: Observation time
         method_estimates$obs_time[k] <- median(df$time)
         
-        #### Method 2: Censored time
+        # Method 2: Censored time
         method_estimates$cens_time[k] <- median(df$time[df$delta == 0])
         
-        #### Method 3: End-of-study method
+        # Method 3: End-of-study method
         method_estimates$end_of_study[k] <- median(C1)
         
-        #### Method 4: Known function time
+        # Method 4: Known function time
         kft <- ifelse(df$delta == 0, df$time, C1)
         method_estimates$known_func[k] <- median(kft)
         
-        #### Method 5: Reverse KM
+        # Method 5: Reverse KM
         survfit_km <- survfit(Surv(time = df$time, event = 1 - df$delta) ~ 1)
         med_km <- surv_median(survfit_km)$median
         method_estimates$reverse_km[k] <- ifelse(is.null(med_km), NA, med_km)
         
-        ##### Bootstrap CI 
-        #### Loop over all methods
+        # Bootstrap CI 
+        # Loop over all methods
         for (method in names(method_estimates)) {
-          ###### Define the function to compute the estimator on a dataset
+          # Define the function to compute the estimator on a dataset
           theta_hat_fun <- function(data, indices) {
             boot_data <- data[indices, ]
             if (method == "obs_time") {
@@ -152,22 +152,22 @@ for (i in 1:5) {
             }
           }
           
-          ###### Apply bootstrapping
+          # Apply bootstrapping
           boot_obj <- boot(data = df, statistic = theta_hat_fun, R = B)
           
-          ###### Standard error and normal CI
+          # Standard error and normal CI
           theta_hat <- method_estimates[[method]][k]
           se_hat <- sd(boot_obj$t, na.rm = TRUE)
           
           ci_low <- theta_hat - 1.96 * se_hat
           ci_high <- theta_hat + 1.96 * se_hat
           
-          ###### Check if true value is within CI
+          # Check if true value is within CI
           covered <- (true_fup >= ci_low) & (true_fup <= ci_high)
           ci_coverage[[method]] <- c(ci_coverage[[method]], as.integer(covered))
         }
         
-        #### Time estimation (print every 5 iterations)
+        # Time estimation (print every 5 iterations)
         if (k %% 5 == 0 || k == 1) {
           elapsed <- as.numeric(difftime(Sys.time(), start_time, units = "secs"))
           avg_time <- elapsed / k
@@ -177,10 +177,10 @@ for (i in 1:5) {
         }
       }
       
-      ### Calculate average censoring percentages
+      # Calculate average censoring percentages
       avg_censoring_percent <- mean(censoring_percents)
       
-      ### Calculate bias, MSE, coverage per method
+      # Calculate bias, MSE, coverage per method
       for (method in names(method_estimates)) {
         estimates <- method_estimates[[method]]
         estimates <- estimates[!is.na(estimates)]
@@ -194,7 +194,7 @@ for (i in 1:5) {
         method_names <- c(method_names, method)
       }
       
-      ### Store all results
+      # Store all results
       results_list[[parameter_combo_index]] <- data.frame(
         lambda_x = lambda_x,
         lambda_c2 = lambda_c2,
@@ -211,26 +211,3 @@ for (i in 1:5) {
 
 # Combine results
 simulation_results <- bind_rows(results_list)
-
-# Plot 
-ggplot(simulation_results, 
-       aes(x = censoring_percent, 
-           y = coverage, 
-           color = method)) +
-  geom_point(alpha = 0.7, size = 2) +
-  labs(
-    title = "Coverage vs Censoring Percentage by Quantification Method",
-    subtitle = "True follow-up: median of T",
-    x = "Censoring Percentage",
-    y = "Coverage Percentage",
-    color = "Estimator"
-  ) +
-  scale_color_discrete(
-    labels = c("Cens time", "End-of-study", "KFT", "Obs time", "Reverse KM")
-  ) +
-  scale_x_continuous(breaks = c(10, 20, 40, 60, 80)) +
-  scale_y_continuous(breaks = c(0,25,50,75,100)) +
-  geom_hline(yintercept = 100, color = "darkgreen", linetype = "dashed") +
-  geom_hline(yintercept = 0, color = "red", linetype = "dashed") +
-  theme_minimal()+
-  theme(panel.grid.minor.x = element_blank())
